@@ -69,3 +69,32 @@ CNN features + Global amplitude features
 → Feature Fusion  
 → Classification  
 → 3 classes
+
+## Installation
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Jangsu526/earthquake_project.git
+cd earthquake_project
+/down
+python -m venv .venv
+source .venv/bin/activate
+/down
+pip install -r requirements.txt
+
+earthquake_project/
+│
+├── src/
+│   ├── baseline.py
+│   ├── proposed_model.py
+│   ├── inspect_stead.py
+│   ├── eval_baseline.py
+│   ├── eval_proposed.py
+│   └── inference.py
+│
+├── data/                   # Local dataset (not tracked)
+├── models/                 # Local model checkpoints (not tracked)
+├── requirements.txt
+├── .gitignore
+└── README.md
