@@ -4,3 +4,5 @@ numpy==1.26.4
 scikit-learn==1.7.2
 h5py==3.16.0
 pandas==2.3.3
+fastapi==0.142.2
+uvicorn==0.54.0

@@ -25,14 +25,14 @@ def predict(model, sample):
     prediction = model.predict(sample, verbose=0)
     return prediction
 
-def prediction_cls(prediction):
+def prediction_reprot(prediction):
     prediction_class = np.argmax(prediction)
     confidence = np.max(prediction)
     return prediction_class, confidence
 
 model = load_model(MODEL_PATH)
 prediction = predict(model, X_test[0])
-prediction_class, confidence = prediction_cls(prediction)
+prediction_class, confidence = prediction_reprot(prediction)
 
 print("prediction_class:", prediction_class)
 print("confidence:", confidence)
