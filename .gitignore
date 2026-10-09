@@ -10,7 +10,7 @@ venv/
 .vscode/
 
 # Dataset
-data/
+/data/
 
 # Model checkpoints
 models/
@@ -21,3 +21,35 @@ Thumbs.db
 
 predictions.db
 test_inference.py
+.env
+
+# Environment secrets (safe templates may be committed)
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs and caches
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.pyo
+*.pyd
+
+# Dataset files and model checkpoints
+*.h5
+*.hdf5
+*.keras
+*.ckpt
+*.ckpt.*
+*.pt
+*.pth
+*.onnx
+
+# Frontend dependencies and generated output
+node_modules/
+.next/
+.vercel/
+*.tsbuildinfo
+/seismic-ai-dashboard/out/
+/seismic-ai-dashboard/build/

@@ -1,0 +1,12 @@
+.env
+.git
+.gitignore
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+sql/
+predictions.db
+test_payload.json
+ubuntu-practice/
