@@ -11,7 +11,7 @@ const moduleRequire = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
 let passed = 0;
 function check(name, action) { action(); passed++; console.log('PASS', name); }
-function load(relative, fetchImpl, reactImpl, serverEnv = {}) {
+function load(relative, fetchImpl, reactImpl, serverEnv = { FASTAPI_API_KEY: "test-only-key" }) {
   const filename = path.resolve(root, relative);
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
@@ -53,6 +53,7 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
   const proxy = load('app/api/predict/route.ts', async (url, options) => {
     assert.equal(url,'http://localhost:8000/predict');
     assert.equal(options.method,'POST');
+    assert.equal(options.headers['X-API-Key'], 'test-only-key');
     assert.deepEqual(JSON.parse(options.body),sample);
     return Response.json(result);
   });
@@ -64,6 +65,7 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
   const malformed = await proxy.POST(new Request('http://localhost/api/predict',{method:'POST',body:'{'}));
   check('malformed request rejected',()=>assert.equal(malformed.status,400));
   for (const [name, upstream, expected] of [
+    ['authentication rejected',()=>Response.json({}, {status:401}),502],
     ['backend validation',()=>Response.json({}, {status:422}),422],
     ['database unavailable',()=>Response.json({}, {status:503}),502],
     ['inference failure',()=>Response.json({}, {status:500}),502],
@@ -75,6 +77,15 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
     const response = await load('app/api/predict/route.ts',async()=>upstream()).POST(request({sample_id:contract.SAMPLE_ID}));
     check(name,()=>assert.equal(response.status,expected));
   }
+  for (const serverEnv of [{}, {FASTAPI_API_KEY: ''}, {FASTAPI_API_KEY: '   '}]) {
+    let called = false;
+    const denied = await load('app/api/predict/route.ts', async()=>{called=true;return Response.json(result)}, undefined, serverEnv).POST(request({sample_id:contract.SAMPLE_ID}));
+    check('missing server key prevents upstream prediction',()=>{assert.equal(denied.status,502);assert.equal(called,false)});
+  }
+  const health = await load('app/api/health/route.ts', async(url,options)=>{
+    assert.equal(url,'http://localhost:8000/health');assert.equal(options.headers,undefined);return Response.json({status:'ok'});
+  }, undefined, {}).GET();
+  check('health remains public without server key',()=>assert.equal(health.status,200));
   const Page = load('app/page.tsx').default;
   const html = moduleRequire('react-dom/server').renderToString(React.createElement(Page));
   check('initial render has no fake prediction',()=>{assert.ok(html.includes('결과 대기'));assert.ok(!html.includes('98.6'));assert.ok(!html.includes('DEMO-003'));});

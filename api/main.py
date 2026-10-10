@@ -1,7 +1,10 @@
 import uuid
+import os
+import secrets
 import numpy as np
 from src.database import save_prediction, get_predictions
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from src.inference import (
@@ -18,6 +21,21 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 model = load_model(MODEL_PATH)
+
+
+@app.middleware("http")
+async def authenticate_api_requests(request: Request, call_next):
+    if request.url.path.rstrip("/") in {"/predict", "/predictions"}:
+        expected = os.getenv("FASTAPI_API_KEY", "")
+        provided = request.headers.get("X-API-Key", "")
+        if (
+            not expected.strip()
+            or not provided
+            or not secrets.compare_digest(provided.encode("utf-8"), expected.encode("utf-8"))
+        ):
+            # Reject before request body parsing or model/database access.
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)
 
 
 class WaveformInput(BaseModel):

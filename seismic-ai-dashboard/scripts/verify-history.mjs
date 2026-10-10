@@ -10,7 +10,7 @@ const requireModule = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
 let passed = 0;
 function check(name, fn) { fn(); passed++; console.log('PASS', name); }
-function load(file, fetchImpl, hooks, serverEnv = {}) {
+function load(file, fetchImpl, hooks, serverEnv = { FASTAPI_API_KEY: "test-only-key" }) {
   const filename = path.resolve(root, file), exports = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(filename,'utf8'), {
     compilerOptions: { module:ts.ModuleKind.CommonJS, jsx:ts.JsxEmit.ReactJSX, esModuleInterop:true },
@@ -46,17 +46,21 @@ function harness(fetchImpl) {
     ['duplicate ID',{count:2,predictions:[row(),row()]}],
   ]) check('reject '+name,()=>assert.equal(parseHistory(value),null));
   const route=load('app/api/predictions/route.ts',async(url,options)=>{
-    assert.equal(url,'http://localhost:8000/predictions?limit=10');assert.equal(options.cache,'no-store');return Response.json(payload);
+    assert.equal(url,'http://localhost:8000/predictions?limit=10');assert.equal(options.cache,'no-store');assert.equal(options.headers['X-API-Key'],'test-only-key');return Response.json(payload);
   });
   const response=await route.GET();const body=await response.json();
   check('proxy preserves envelope and sorts latest first',()=>{assert.equal(response.status,200);assert.equal(body.count,2);assert.equal(body.predictions[0].id,14);assert.equal(response.headers.get('Cache-Control'),'no-store')});
   for(const [name,upstream,status] of [
+    ['authentication failure',()=>Response.json({}, {status:401}),502],
     ['database failure',()=>Response.json({}, {status:503}),502],
     ['malformed envelope',()=>Response.json([]),502],
     ['invalid JSON',()=>new Response('{'),502],
     ['network failure',()=>{throw new TypeError('offline')},502],
     ['timeout',()=>{const error=new Error('timeout');error.name='TimeoutError';throw error},504],
   ]) {const result=await load('app/api/predictions/route.ts',async()=>upstream()).GET();check(name,()=>assert.equal(result.status,status))}
+  let upstreamCalled=false;
+  const denied=await load('app/api/predictions/route.ts',async()=>{upstreamCalled=true;return Response.json(payload)},undefined,{}).GET();
+  check('missing server key prevents upstream history request',()=>{assert.equal(denied.status,502);assert.equal(upstreamCalled,false)});
   let calls=0;
   const fetchHistory=async(url,options)=>{calls++;assert.equal(url,'/api/predictions?limit=10');assert.equal(options.cache,'no-store');return Response.json(payload)};
   const first=harness(fetchHistory);

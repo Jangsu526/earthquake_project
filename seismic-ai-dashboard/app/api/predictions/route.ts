@@ -1,12 +1,14 @@
-import { fastApiUrl } from "../fastapi";
+import { fastApiUrl, fastApiHeaders } from "../fastapi";
 import { parseHistory } from "../../prediction-history-contract";
 
 export async function GET() {
   try {
     const response = await fetch(fastApiUrl("/predictions?limit=10"), {
+      headers: fastApiHeaders(),
       cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000),
     });
-    if (!response.ok) return Response.json({ error: response.status === 503 ?
+    if (!response.ok) return Response.json({ error: response.status === 401 ? "서버 간 API 인증에 실패했습니다. 관리자에게 문의해 주세요." :
+      response.status === 503 ?
       "데이터베이스 이력을 일시적으로 조회할 수 없습니다." : "이력 조회 API가 오류를 반환했습니다." }, { status: 502 });
     const data = parseHistory(await response.json());
     if (!data) return Response.json({ error: "이력 응답 형식이 올바르지 않습니다." }, { status: 502 });

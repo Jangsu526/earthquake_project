@@ -1,4 +1,4 @@
-import { fastApiUrl } from "../fastapi";
+import { fastApiUrl, fastApiHeaders } from "../fastapi";
 import sample from "../../../data/stead-sample.json";
 import { isPrediction, isWaveform, isSampleId, waveformError, MAX_JSON_BYTES, SAMPLE_ID } from "../../inference-contract";
 
@@ -53,14 +53,15 @@ export async function POST(request: Request) {
   try {
     const response = await fetch(fastApiUrl("/predict"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...fastApiHeaders() },
       body: JSON.stringify(payload),
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(120000),
     });
     if (!response.ok) {
-      const message = response.status === 422 ? "모델이 입력 데이터를 거부했습니다." :
+      const message = response.status === 401 ? "서버 간 API 인증에 실패했습니다. 관리자에게 문의해 주세요." :
+        response.status === 422 ? "모델이 입력 데이터를 거부했습니다." :
         response.status === 503 ? "백엔드 또는 데이터베이스를 사용할 수 없습니다." :
         "백엔드 추론에 실패했습니다.";
       return Response.json({ error: message }, { status: response.status === 422 ? 422 : 502 });

@@ -2,9 +2,10 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DB_HOST: db
+      FASTAPI_API_KEY: ${FASTAPI_API_KEY:?FASTAPI_API_KEY must be set}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     depends_on:
       db:
