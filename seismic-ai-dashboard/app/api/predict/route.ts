@@ -1,8 +1,12 @@
 import { fastApiUrl, fastApiHeaders } from "../fastapi";
+import { checkPredictionRateLimit } from "./rate-limit";
 import sample from "../../../data/stead-sample.json";
 import { isPrediction, isWaveform, isSampleId, waveformError, MAX_JSON_BYTES, SAMPLE_ID } from "../../inference-contract";
 
 export async function POST(request: Request) {
+  const limited = await checkPredictionRateLimit(request);
+  if (limited) return limited;
+
   // Limit the streamed body before JSON parsing; do not trust Content-Length alone.
   let text = "";
   const reader = request.body?.getReader();

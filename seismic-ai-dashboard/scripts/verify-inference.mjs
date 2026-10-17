@@ -19,6 +19,8 @@ function load(relative, fetchImpl, reactImpl, serverEnv = { FASTAPI_API_KEY: "te
   }).outputText;
   vm.runInNewContext(code, { exports, process: { env: serverEnv }, Response, Request, AbortSignal, Error, TypeError, SyntaxError, TextEncoder, TextDecoder, crypto: moduleRequire("node:crypto").webcrypto, fetch: fetchImpl,
     require: name => {
+      // Rate limiting is exercised separately by verify-rate-limit.mjs.
+      if (name === './rate-limit') return { checkPredictionRateLimit: async () => null };
       if (name === 'react' && reactImpl) return reactImpl;
       if (!name.startsWith('.')) return moduleRequire(name);
       const resolved = path.resolve(path.dirname(filename), name);
