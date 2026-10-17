@@ -11,13 +11,13 @@ const moduleRequire = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../', import.meta.url));
 let passed = 0;
 function check(name, action) { action(); passed++; console.log('PASS', name); }
-function load(relative, fetchImpl, reactImpl, serverEnv = { FASTAPI_API_KEY: "test-only-key" }) {
+function load(relative, fetchImpl, reactImpl, serverEnv = { FASTAPI_API_KEY: "test-only-key" }, diagnosticLogs = []) {
   const filename = path.resolve(root, relative);
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(code, { exports, process: { env: serverEnv }, Response, Request, AbortSignal, Error, TypeError, SyntaxError, TextEncoder, TextDecoder, crypto: moduleRequire("node:crypto").webcrypto, fetch: fetchImpl,
+  vm.runInNewContext(code, { exports, console: { error: (...args) => diagnosticLogs.push(args) }, process: { env: serverEnv }, Response, Request, AbortSignal, Error, TypeError, SyntaxError, TextEncoder, TextDecoder, crypto: moduleRequire("node:crypto").webcrypto, fetch: fetchImpl,
     require: name => {
       // Rate limiting is exercised separately by verify-rate-limit.mjs.
       if (name === './rate-limit') return { checkPredictionRateLimit: async () => null };
@@ -25,7 +25,7 @@ function load(relative, fetchImpl, reactImpl, serverEnv = { FASTAPI_API_KEY: "te
       if (!name.startsWith('.')) return moduleRequire(name);
       const resolved = path.resolve(path.dirname(filename), name);
       if (name.endsWith('.json')) return JSON.parse(fs.readFileSync(resolved, 'utf8'));
-      return load(resolved + (fs.existsSync(resolved + '.ts') ? '.ts' : '.tsx'), fetchImpl, reactImpl, serverEnv);
+      return load(resolved + (fs.existsSync(resolved + '.ts') ? '.ts' : '.tsx'), fetchImpl, reactImpl, serverEnv, diagnosticLogs);
     },
   });
   return exports;
@@ -79,6 +79,17 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
     const response = await load('app/api/predict/route.ts',async()=>upstream()).POST(request({sample_id:contract.SAMPLE_ID}));
     check(name,()=>assert.equal(response.status,expected));
   }
+  const diagnosticLogs=[];
+  const diagnosticMicId='MIC_EXPERIMENT_11111111111141118111111111111111';
+  const backend500=await load('app/api/predict/route.ts',async()=>Response.json({}, {status:500}),undefined,undefined,diagnosticLogs)
+    .POST(request({source:'json',sample_id:diagnosticMicId,waveform:sample.waveform}));
+  check('backend 500 maps to exact observed 502 message; safe diagnostics only',()=>{
+    assert.equal(backend500.status,502);
+    assert.equal(diagnosticLogs.length,1);
+    assert.deepEqual(JSON.parse(JSON.stringify(diagnosticLogs[0])),['Prediction backend rejected request',{upstreamStatus:500,sampleIdLength:47}]);
+    assert.ok(!JSON.stringify(diagnosticLogs).includes(diagnosticMicId));
+  });
+  assert.deepEqual(await backend500.json(),{error:'백엔드 추론에 실패했습니다.'});
   for (const serverEnv of [{}, {FASTAPI_API_KEY: ''}, {FASTAPI_API_KEY: '   '}]) {
     let called = false;
     const denied = await load('app/api/predict/route.ts', async()=>{called=true;return Response.json(result)}, undefined, serverEnv).POST(request({sample_id:contract.SAMPLE_ID}));
@@ -157,6 +168,29 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
   });
   const customResponse=await jsonProxy.POST(request({source:'json',...custom}));
   check('custom waveform forwarded unchanged',()=>assert.equal(customResponse.status,200));
+  for (const id of ['A'.repeat(50), 'MIC_EXPERIMENT_'+'a'.repeat(32)]) {
+    check(`JSON parser accepts ${id.length}-character ID`,()=>{
+      assert.equal(contract.parseWaveformJSON(JSON.stringify({...custom,sample_id:id})).sample_id,id);
+      assert.equal(contract.isSampleId(id),true);
+    });
+    let forwarded=false;
+    const accepted=await load('app/api/predict/route.ts',async(url,options)=>{
+      forwarded=true;assert.equal(JSON.parse(options.body).sample_id,id);
+      return Response.json({...result,sample_id:id});
+    }).POST(request({source:'json',...custom,sample_id:id}));
+    check(`API accepts and forwards ${id.length}-character ID`,()=>{assert.equal(accepted.status,200);assert.equal(forwarded,true)});
+  }
+  check('JSON parser rejects 51-character ID with clear length error',()=>{
+    assert.equal(contract.isSampleId('A'.repeat(51)),false);
+    assert.throws(()=>contract.parseWaveformJSON(JSON.stringify({...custom,sample_id:'A'.repeat(51)})),/1~50/);
+  });
+  let longIdForwarded=false;
+  const rejectedLongId=await load('app/api/predict/route.ts',async()=>{longIdForwarded=true;return Response.json(result)})
+    .POST(request({source:'json',...custom,sample_id:'A'.repeat(51)}));
+  const longIdError=await rejectedLongId.json();
+  check('51-character ID rejected before FastAPI with 422 and clear length error',()=>{
+    assert.equal(rejectedLongId.status,422);assert.equal(longIdForwarded,false);assert.match(longIdError.error,/1~50/);
+  });
   let called=false;
   const rejectProxy=load('app/api/predict/route.ts',async()=>{called=true;return Response.json(result)});
   for(const [name,body] of [
@@ -189,6 +223,11 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
   const choose=async file=>{find(render(),node=>node.type==='input'&&node.props.type==='file').props.onChange({target:{files:[file],value:'selected'}});await flush()};
   await choose({name:'waveform.json',size:100000,text:async()=>JSON.stringify(custom)});
   check('JSON file is automatically validated',()=>{assert.equal(states[0],customId);assert.deepEqual(JSON.parse(JSON.stringify(states[1])),sample.waveform)});
+  await choose({name:'long-id.json',size:100000,text:async()=>JSON.stringify({...custom,sample_id:'A'.repeat(51)})});
+  check('file input rejects long ID and leaves inference disabled',()=>{
+    assert.equal(states[1],null);assert.match(states[4],/1~50/);
+    assert.equal(find(render(),node=>node.type==='button'&&node.props.className==='primary-button').props.disabled,true);
+  });
   await choose({name:'bad.json',size:2,text:async()=>'[]'});
   check('bad file clears previous waveform',()=>{assert.equal(states[1],null);assert.ok(states[4].includes('1000'))});
   await choose({name:'waveform.txt',size:10,text:async()=>{throw Error('should not read')}});
@@ -197,5 +236,38 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
   check('oversized file rejected before reading',()=>assert.ok(states[4].includes('1 MiB')));
   await choose({name:'unreadable.json',size:10,text:async()=>{throw Error('unreadable')}});
   check('file read failure is Korean',()=>assert.ok(states[4].includes('파일을 읽지 못했습니다')));
+  find(render(),node=>node.type==='button'&&node.props.children==='마이크 실험').props.onClick();
+  const microphone = () => find(render(),node=>typeof node.props?.onBegin === 'function' && typeof node.props?.onComplete === 'function');
+  const callsBeforeMic = calls.length;
+  microphone().props.onBegin();
+  check('microphone recording clears stale input and disables inference',()=>{
+    assert.equal(states[1],null);assert.equal(states[5],null);
+    assert.equal(find(render(),node=>node.type==='button'&&node.props.className==='primary-button').props.disabled,true);
+  });
+  const micId='MIC_EXPERIMENT_11111111111141118111111111111111';
+  const micWaveform=Array.from({length:1000},()=>[0.01,0.01,0.01]);
+  microphone().props.onComplete(micWaveform,micId); microphone().props.onEnd();
+  check('microphone completion previews without API calls',()=>{
+    assert.equal(calls.length,callsBeforeMic);assert.equal(states[0],micId);
+    assert.equal(find(render(),node=>node.type==='button'&&node.props.className==='primary-button').props.disabled,false);
+  });
+  find(render(),node=>node.type==='button'&&node.props.className==='primary-button').props.onClick();await flush();
+  check('manual microphone inference reuses JSON request and result contract',()=>{
+    assert.equal(lastPredictBody.source,'json');assert.equal(lastPredictBody.sample_id,micId);
+    assert.deepEqual(lastPredictBody.waveform,micWaveform);assert.equal(states[5].sample_id,micId);
+  });
+  // The page hook harness is flat; omit the separately-tested stateful recorder
+  // when rendering the page's result/preview markup with real React DOM.
+  function omitRecorder(node) {
+    if (!React.isValidElement(node)) return node;
+    if (typeof node.props.onBegin === 'function') return null;
+    return React.cloneElement(node, {}, ...React.Children.toArray(node.props.children).map(omitRecorder));
+  }
+  const micHtml=moduleRequire('react-dom/server').renderToString(omitRecorder(render()));
+  check('experimental result and waveform disclaimers displayed',()=>{
+    assert.ok(micHtml.includes('Experimental Audio Input / 지진 감지 아님'));
+    assert.ok(micHtml.includes('모델 출력 점수 (지진 확률 아님)'));
+    assert.ok(micHtml.includes('모노 복제 3채널'));
+  });
   console.log(`${passed} checks passed`);
 })().catch(error=>{console.error(error);process.exitCode=1});

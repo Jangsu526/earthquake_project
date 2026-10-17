@@ -1,7 +1,7 @@
 import { fastApiUrl, fastApiHeaders } from "../fastapi";
 import { checkPredictionRateLimit } from "./rate-limit";
 import sample from "../../../data/stead-sample.json";
-import { isPrediction, isWaveform, isSampleId, waveformError, MAX_JSON_BYTES, SAMPLE_ID } from "../../inference-contract";
+import { isPrediction, isWaveform, isSampleId, waveformError, MAX_JSON_BYTES, SAMPLE_ID, SAMPLE_ID_ERROR } from "../../inference-contract";
 
 export async function POST(request: Request) {
   const limited = await checkPredictionRateLimit(request);
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     const error = waveformError(input.waveform);
     if (error) return Response.json({ error }, { status: 422 });
     if (!isSampleId(input.sample_id)) {
-      return Response.json({ error: "샘플 ID 형식이 올바르지 않습니다." }, { status: 422 });
+      return Response.json({ error: SAMPLE_ID_ERROR }, { status: 422 });
     }
     payload = { sample_id: input.sample_id, waveform: input.waveform };
   } else if ((input.source === undefined || input.source === "stead") && input.sample_id === SAMPLE_ID) {
@@ -64,6 +64,11 @@ export async function POST(request: Request) {
       signal: AbortSignal.timeout(120000),
     });
     if (!response.ok) {
+      // Log only bounded diagnostic metadata, never IDs, waveforms, URLs or keys.
+      console.error("Prediction backend rejected request", {
+        upstreamStatus: response.status,
+        sampleIdLength: payload.sample_id.length,
+      });
       const message = response.status === 401 ? "서버 간 API 인증에 실패했습니다. 관리자에게 문의해 주세요." :
         response.status === 422 ? "모델이 입력 데이터를 거부했습니다." :
         response.status === 503 ? "백엔드 또는 데이터베이스를 사용할 수 없습니다." :

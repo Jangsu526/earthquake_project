@@ -38,8 +38,10 @@ export function isWaveform(value: unknown): value is Waveform {
   return waveformError(value) === null;
 }
 
+export const SAMPLE_ID_ERROR = "샘플 ID는 영문·숫자로 시작하는 1~50자의 영문·숫자·밑줄·마침표·하이픈이어야 합니다.";
+
 export function isSampleId(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/.test(value);
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,49}$/.test(value);
 }
 
 export function parseWaveformJSON(text: string): { waveform: Waveform; sample_id?: string } {
@@ -52,7 +54,7 @@ export function parseWaveformJSON(text: string): { waveform: Waveform; sample_id
   const error = waveformError(waveform);
   if (error || !isWaveform(waveform)) throw new Error(error ?? "입력 파형이 유효하지 않습니다.");
   if (object && object.sample_id !== undefined && !isSampleId(object.sample_id)) {
-    throw new Error("샘플 ID는 영문·숫자로 시작하는 1~120자의 영문·숫자·밑줄·마침표·하이픈이어야 합니다.");
+    throw new Error(SAMPLE_ID_ERROR);
   }
   return { waveform, ...(object?.sample_id !== undefined ? { sample_id: object.sample_id as string } : {}) };
 }

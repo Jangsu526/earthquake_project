@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import MicrophoneInput from "./microphone-input";
+import { AUDIO_NOTICE, isAudioExperiment } from "./audio-resampling";
 import PredictionHistory from "./prediction-history";
 import { CLASS_NAMES, SAMPLE_ID, isPrediction, isWaveform, parseWaveformJSON, MAX_JSON_BYTES, type Prediction, type Waveform as WaveformData } from "./inference-contract";
 
-function Waveform({ waveform }: { waveform: WaveformData | null }) {
+function Waveform({ waveform, experimental = false }: { waveform: WaveformData | null; experimental?: boolean }) {
   const colors = ["#108879", "#6484c4", "#c18b46"];
   const scale = waveform ? Math.max(...waveform.flat().map(value => Math.abs(value))) || 1 : 1;
   return (
-    <svg viewBox="0 0 720 300" className="waveform" role="img" aria-label={waveform ? "실제 입력 파형: 위에서부터 채널 1, 2, 3. 세 채널에 동일한 표시 스케일을 적용했습니다." : "입력을 검증하면 3채널 파형이 표시됩니다."}>
+    <svg viewBox="0 0 720 300" className="waveform" role="img" aria-label={experimental ? `${AUDIO_NOTICE} · 모노 복제 3채널` : waveform ? "실제 입력 파형: 위에서부터 채널 1, 2, 3. 세 채널에 동일한 표시 스케일을 적용했습니다." : "입력을 검증하면 3채널 파형이 표시됩니다."}>
       <defs><pattern id="grid" width="60" height="25" patternUnits="userSpaceOnUse"><path d="M 60 0 L 0 0 0 25" fill="none" stroke="#e6eeed" strokeWidth="1" /></pattern></defs>
       <rect width="720" height="300" fill="url(#grid)" />
       {colors.map((color, channel) => <g key={channel}>
@@ -87,7 +89,7 @@ export default function Home() {
     }
   }
   const [connection, setConnection] = useState<"checking" | "connected" | "disconnected">("checking");
-  const [mode, setMode] = useState<"stead" | "json" | "file">("stead");
+  const [mode, setMode] = useState<"stead" | "json" | "file" | "microphone">("stead");
   const [draft, setDraft] = useState("");
   const [filename, setFilename] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -165,6 +167,7 @@ export default function Home() {
   const connectionLabel = connection === "connected" ? "연결됨" :
     connection === "disconnected" ? "연결 안 됨" : "확인 중";
   const className = result ? CLASS_NAMES[result.prediction_class] : null;
+  const experimental = mode === "microphone" || !!(result && isAudioExperiment(result.sample_id));
   const confidence = result ? (result.confidence * 100).toFixed(2) : null;
 
   return (
@@ -172,7 +175,7 @@ export default function Home() {
       <a className="skip-link" href="#main">본문으로 이동</a>
       <aside className="sidebar">
         <a href="#overview" className="brand"><span className="brand-icon" aria-hidden="true">∿</span><span>SEISMIC<span className="brand-ai"> AI</span><small>EARTHQUAKE INTELLIGENCE</small></span></a>
-        <div className="workspace-label">WORKSPACE <span>DAY 17</span></div>
+        <div className="workspace-label">WORKSPACE <span>DAY 22</span></div>
         <nav aria-label="대시보드 메뉴">
           <a className="nav-link current" href="#overview"><span aria-hidden="true">▦</span> 대시보드 <span className="nav-dot" /></a>
           <a className="nav-link" href="#model"><span aria-hidden="true">◇</span> 모델 소개</a>
@@ -185,8 +188,8 @@ export default function Home() {
       <div className="main-shell">
         <header className="topbar"><div>워크스페이스 <span>/</span> <strong>대시보드</strong></div><span className="outline-badge"><span className="status-dot" /> 3채널 파형 추론</span></header>
         <main id="main">
-          <section id="overview" className="page-heading"><div><div className="eyebrow">SEISMIC ANALYSIS WORKSPACE</div><h1>지진 이벤트 분석 대시보드<span>.</span></h1><p>지진파 데이터에서 인사이트까지, AI 기반 이벤트 분류 워크스페이스</p></div><span className="day-tag">DAY 17 <span>LIVE INFERENCE</span></span></section>
-          <div className="notice"><span className="notice-icon" aria-hidden="true">i</span><p><strong>STEAD · JSON 붙여넣기 · JSON 파일 입력을 지원합니다.</strong> 실제 모델을 호출하며, 성공한 추론은 기존 API에 의해 PostgreSQL에 저장됩니다.</p><span className="demo-badge">LIVE API</span></div>
+          <section id="overview" className="page-heading"><div><div className="eyebrow">SEISMIC ANALYSIS WORKSPACE</div><h1>지진 이벤트 분석 대시보드<span>.</span></h1><p>지진파 데이터에서 인사이트까지, AI 기반 이벤트 분류 워크스페이스</p></div><span className="day-tag">DAY 22 <span>LIVE INFERENCE</span></span></section>
+          <div className="notice"><span className="notice-icon" aria-hidden="true">i</span><p><strong>STEAD · JSON · 파일 · 마이크 실험 입력을 지원합니다.</strong> 실제 모델을 호출하며, 성공한 추론은 기존 API에 의해 PostgreSQL에 저장됩니다.</p><span className="demo-badge">LIVE API</span></div>
 
           <section id="model" className="model-grid" aria-label="모델 소개">
             <article className="card model-card"><div className="card-eyebrow">THE MODEL <span className="small-chip">TensorFlow</span></div><h2>Earthquake Event Classifier</h2><p>TensorFlow로 개발한 지진 이벤트 분류 모델을 웹에서 실행하고, 예측 결과와 추론 이력을 확인하는 분석 환경입니다.</p><div className="model-tags"><span>지진파 분석</span><span>Micro · Macro · Noise</span><span>AI 추론</span></div></article>
@@ -198,7 +201,7 @@ export default function Home() {
             <section id="input" className="card input-card"><div className="section-heading"><div><span className="step">01</span><h2>지진파 데이터 입력</h2></div><span className="subtle-label">WAVEFORM INPUT</span></div>
               <div className="input-body">
                 <div className="input-modes" role="group" aria-label="입력 방식">
-                  {([ ["stead", "STEAD 샘플"], ["json", "JSON 붙여넣기"], ["file", "JSON 파일"] ] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={mode === key} disabled={loadingSample || running} onClick={() => changeMode(key)}>{label}</button>)}
+                  {([ ["stead", "STEAD 샘플"], ["json", "JSON 붙여넣기"], ["file", "JSON 파일"], ["microphone", "마이크 실험"] ] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={mode === key} disabled={loadingSample || running} onClick={() => changeMode(key)}>{label}</button>)}
                 </div>
                 {mode === "stead" ? <>
                   <div className="field-heading"><label htmlFor="stead-sample">STEAD 샘플 선택</label><span>원본 3채널</span></div>
@@ -208,31 +211,34 @@ export default function Home() {
                 </> : mode === "json" ? <>
                   <div className="field-heading"><label htmlFor="waveform-json">JSON 파형 데이터</label><span>최대 1 MiB</span></div>
                   <textarea id="waveform-json" value={draft} disabled={loadingSample || running} spellCheck={false} placeholder={'[[0.1, 0.2, 0.3], ...] 또는 {"waveform": [...], "sample_id": "my_sample"}'} onChange={event => { setDraft(event.target.value); setWaveform(null); setResult(null); setSelected(""); setError(""); }} aria-describedby="json-format input-status" />
-                </> : <>
+                </> : mode === "microphone" ? <MicrophoneInput disabled={running} onBegin={() => {
+                  requestLock.current = true; setLoadingSample(true); setSelected(""); setWaveform(null); setResult(null); setError("");
+                }} onEnd={() => { requestLock.current = false; setLoadingSample(false); }} onComplete={(data, id) => { setWaveform(data); setSelected(id); }} /> : <>
                   <div className="field-heading"><label htmlFor="waveform-file">JSON 파일 업로드</label><span>최대 1 MiB</span></div>
                   <input id="waveform-file" ref={fileInput} className="file-input" type="file" accept=".json,application/json" disabled={loadingSample || running} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; void readFile(file); }} aria-describedby="json-format input-status" />
                   {filename && <p className="chart-note">선택 파일: {filename}</p>}
                 </>}
-                {mode !== "stead" && <p id="json-format" className="chart-note">1000개의 [채널1, 채널2, 채널3] 배열 또는 waveform 필드가 있는 JSON 객체. sample_id는 선택 사항이며 생략하면 자동 생성합니다.</p>}
+                {(mode === "json" || mode === "file") && <p id="json-format" className="chart-note">1000개의 [채널1, 채널2, 채널3] 배열 또는 waveform 필드가 있는 JSON 객체. sample_id는 선택 사항이며 생략하면 자동 생성합니다.</p>}
                 <p id="input-status" className="input-status" aria-live="polite">{loadingSample ? "데이터 불러오는 중…" : waveform ? `검증 완료 · 1000개 시점 × 3채널 · 샘플 ID: ${selected}` : "입력 후 검증에 성공하면 파형과 추론 버튼이 활성화됩니다."}</p>
                 <div className="input-actions">
-                  {mode === "stead" ? <button className="secondary-button" disabled={!selected || loadingSample || running} onClick={() => void loadSample(selected)}>샘플 다시 불러오기</button> : mode === "json" ? <button className="secondary-button" disabled={!draft.trim() || loadingSample || running} onClick={() => acceptJSON(draft)}>JSON 검증 및 파형 표시</button> : <span className="chart-note">파일 선택 후 자동 검증합니다.</span>}
+                  {mode === "stead" ? <button className="secondary-button" disabled={!selected || loadingSample || running} onClick={() => void loadSample(selected)}>샘플 다시 불러오기</button> : mode === "json" ? <button className="secondary-button" disabled={!draft.trim() || loadingSample || running} onClick={() => acceptJSON(draft)}>JSON 검증 및 파형 표시</button> : <span className="chart-note">{mode === "microphone" ? "녹음 완료 후 직접 추론을 실행해 주세요." : "파일 선택 후 자동 검증합니다."}</span>}
                   <button className="text-button" disabled={loadingSample || running} onClick={resetInput}>초기화</button>
                 </div>
-                <div className="wave-heading"><span><span className="status-dot" /> 실제 입력 파형 · 3채널</span><span className="demo-badge">{mode === "stead" ? "STEAD 원본" : "사용자 데이터"}</span></div>
-                <Waveform waveform={waveform} /><div className="axis-labels"><span>{mode === "stead" ? "100" : "0"}</span><span>샘플 인덱스</span><span>{mode === "stead" ? "1099" : "999"}</span></div><p className="chart-note">{mode === "stead" ? "HDF5 [100:1100, :] · " : ""}채널별 구간과 색상으로 구분 · 공통 스케일은 표시에만 적용 · 원본 값으로 추론</p>
-                <div className="run-area"><p id="input-help">검증된 원본 3채널 데이터로 실제 추론 및 PostgreSQL 저장을 실행합니다. 입력 수정 시 다시 검증해야 합니다.</p>
+                <div className="wave-heading"><span><span className="status-dot" /> {mode === "microphone" ? AUDIO_NOTICE + " · 모노 복제 3채널" : "실제 입력 파형 · 3채널"}</span><span className="demo-badge">{mode === "stead" ? "STEAD 원본" : "사용자 데이터"}</span></div>
+                <Waveform waveform={waveform} experimental={mode === "microphone"} /><div className="axis-labels"><span>{mode === "stead" ? "100" : "0"}</span><span>샘플 인덱스</span><span>{mode === "stead" ? "1099" : "999"}</span></div><p className="chart-note">{mode === "stead" ? "HDF5 [100:1100, :] · " : ""}채널별 구간과 색상으로 구분 · 공통 스케일은 표시에만 적용 · 원본 값으로 추론</p>
+                <div className="run-area"><p id="input-help">{mode === "microphone" ? "실험 파형만 전송하며 결과 메타데이터를 저장합니다. 3채널은 동일한 모노 신호의 복제입니다." : "검증된 원본 3채널 데이터로 실제 추론 및 PostgreSQL 저장을 실행합니다. 입력 수정 시 다시 검증해야 합니다."}</p>
                   {error && <p role="alert" className="inference-error">{error}</p>}
                   <button className="primary-button" disabled={!waveform || loadingSample || running} onClick={() => void runPrediction()}><span aria-hidden="true">▷</span>{running ? "AI 추론 진행 중…" : "AI 추론 실행"}<span>POST /predict</span></button>
                 </div>
               </div>
             </section>
-            <section className="card result-card" aria-labelledby="result-title"><div className="section-heading"><div><span className="step">02</span><h2 id="result-title">예측 결과</h2></div><span className="demo-badge">{result ? "실제 모델 응답" : "추론 대기"}</span></div>
+            <section className="card result-card" aria-labelledby="result-title"><div className="section-heading"><div><span className="step">02</span><h2 id="result-title">{experimental ? "실험 모델 출력" : "예측 결과"}</h2></div><span className="demo-badge">{result ? "실제 모델 응답" : "추론 대기"}</span></div>
               <div className="result-body" aria-live="polite" aria-busy={running}><div className="result-icon" aria-hidden="true">∿</div><span className="eyebrow">MODEL CLASSIFICATION</span>
+                {experimental && <p className="inference-error"><strong>{AUDIO_NOTICE}</strong></p>}
                 <h3>{className?.en ?? (running ? "분석 중" : "결과 대기")}</h3><p>{className?.ko ?? "입력을 검증한 뒤 추론을 실행해 주세요."}</p>
-                <div className="confidence"><div><span>예측 신뢰도</span><strong>{confidence ?? "—"}<span>{result ? "%" : ""}</span></strong></div><div className="confidence-track"><span style={{ width: result ? `${result.confidence * 100}%` : "0%" }} /></div></div>
-                <dl className="result-details"><div><dt>샘플 ID</dt><dd>{result?.sample_id ?? "—"}</dd></div><div><dt>클래스 ID</dt><dd>{result?.prediction_class ?? "—"}</dd></div><div><dt>PostgreSQL 기록 ID</dt><dd>{result?.id ?? "—"}</dd></div></dl>
-                <div className="result-note">{result ? "실제 /predict 응답입니다. 신뢰도는 모델 출력 확률이며 실제 정답 여부를 보증하지 않습니다." : "가상 예측값은 표시하지 않습니다. 성공한 API 응답만 결과에 표시됩니다."}</div>
+                <div className="confidence"><div><span>{experimental ? "모델 출력 점수 (지진 확률 아님)" : "예측 신뢰도"}</span><strong>{confidence ?? "—"}<span>{result ? "%" : ""}</span></strong></div><div className="confidence-track"><span style={{ width: result ? `${result.confidence * 100}%` : "0%" }} /></div></div>
+                <dl className="result-details"><div><dt>샘플 ID</dt><dd>{result?.sample_id ?? "—"}</dd></div><div><dt>{experimental ? "모델 출력 클래스 ID" : "클래스 ID"}</dt><dd>{result?.prediction_class ?? "—"}</dd></div><div><dt>PostgreSQL 기록 ID</dt><dd>{result?.id ?? "—"}</dd></div></dl>
+                <div className="result-note">{experimental ? "마이크 오디오의 실험 출력입니다. 지진 발생·규모·실제 확률을 뜻하지 않습니다." : result ? "실제 /predict 응답입니다. 신뢰도는 모델 출력 확률이며 실제 정답 여부를 보증하지 않습니다." : "가상 예측값은 표시하지 않습니다. 성공한 API 응답만 결과에 표시됩니다."}</div>
               </div>
             </section>
           </div>

@@ -76,5 +76,11 @@ function harness(fetchImpl) {
   let resolveRequest;
   const cancelled=harness(()=>new Promise(resolve=>{resolveRequest=resolve}));cancelled.render();const cancel=cancelled.effects[0]();cancel();resolveRequest(Response.json(payload));await flush();
   check('unmounted request cannot overwrite a new history instance',()=>assert.equal(cancelled.states[0].length,0));
+  const micPayload={count:1,predictions:[{...payload.predictions[0],sample_id:'MIC_EXPERIMENT_11111111-1111-4111-8111-111111111111'}]};
+  const mic=harness(async()=>Response.json(micPayload));mic.render();const cleanMic=mic.effects[0]();await flush();
+  check('persisted microphone history shows experimental label and score',()=>{
+    const html=mic.html();assert.ok(html.includes('Experimental Audio Input / 지진 감지 아님'));
+    assert.ok(html.includes('모델 출력 클래스:'));assert.ok(html.includes('모델 점수 · 지진 확률 아님'));
+  });cleanMic();
   console.log(`${passed} history checks passed`);
 })().catch(error=>{console.error(error);process.exitCode=1});
