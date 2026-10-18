@@ -3,6 +3,10 @@ import numpy as np
 
 
 MODEL_PATH = "models/best_proposed_model.keras"
+MODEL_PATHS = {
+    "baseline_v1": "models/baseline_best_model.keras",
+    "proposed_v2": MODEL_PATH,
+}
 
 
 def load_model(model_path):

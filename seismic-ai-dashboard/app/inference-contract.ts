@@ -8,9 +8,20 @@ export const CLASS_NAMES = {
   2: { ko: "노이즈", en: "Noise" },
 } as const;
 
+export const MODEL_NAMES = { baseline_v1: "V1 · Baseline CNN", proposed_v2: "V2 · Proposed (최대 진폭 결합)" } as const;
+export type ModelName = keyof typeof MODEL_NAMES;
+export function isModelName(value: unknown): value is ModelName {
+  return value === "baseline_v1" || value === "proposed_v2";
+}
+export function modelLabel(name: string): string {
+  if (name === "proposed_v1") return "Proposed · 기존 기록 (proposed_v1)";
+  return isModelName(name) ? MODEL_NAMES[name] : name;
+}
+
 export type Waveform = [number, number, number][];
 export type Prediction = {
   id: number;
+  model_name: ModelName;
   sample_id: string;
   prediction_class: keyof typeof CLASS_NAMES;
   confidence: number;
@@ -59,10 +70,11 @@ export function parseWaveformJSON(text: string): { waveform: Waveform; sample_id
   return { waveform, ...(object?.sample_id !== undefined ? { sample_id: object.sample_id as string } : {}) };
 }
 
-export function isPrediction(value: unknown, expectedSampleId = SAMPLE_ID): value is Prediction {
+export function isPrediction(value: unknown, expectedSampleId = SAMPLE_ID, expectedModel?: ModelName): value is Prediction {
   if (value === null || typeof value !== "object") return false;
   const data = value as Record<string, unknown>;
-  return typeof data.id === "number" && Number.isSafeInteger(data.id) && data.id > 0 &&
+  return isModelName(data.model_name) && (expectedModel === undefined || data.model_name === expectedModel) &&
+    typeof data.id === "number" && Number.isSafeInteger(data.id) && data.id > 0 &&
     isSampleId(data.sample_id) && data.sample_id === expectedSampleId &&
     (data.prediction_class === 0 || data.prediction_class === 1 || data.prediction_class === 2) &&
     typeof data.confidence === "number" && Number.isFinite(data.confidence) &&

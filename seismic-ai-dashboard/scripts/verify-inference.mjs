@@ -34,7 +34,7 @@ check('server API URL defaults to localhost', () => assert.equal(load('app/api/f
 check('server API URL accepts configured backend and trims trailing slash', () => assert.equal(load('app/api/fastapi.ts', undefined, undefined, { FASTAPI_BASE_URL: ' https://backend.example.test/// ' }).fastApiUrl('/predictions?limit=10'), 'https://backend.example.test/predictions?limit=10'));
 const contract = load('app/inference-contract.ts');
 const sample = JSON.parse(fs.readFileSync(path.join(root, 'data/stead-sample.json')));
-const result = { id: 10, sample_id: contract.SAMPLE_ID, prediction_class: 0, confidence: 0.9391732215881348 };
+const result = { model_name: "proposed_v2", id: 10, sample_id: contract.SAMPLE_ID, prediction_class: 0, confidence: 0.9391732215881348 };
 const request = body => new Request('http://localhost/api/predict', {method:'POST', body:JSON.stringify(body)});
 (async () => {
   check('class mapping', () => {
@@ -56,12 +56,25 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
     assert.equal(url,'http://localhost:8000/predict');
     assert.equal(options.method,'POST');
     assert.equal(options.headers['X-API-Key'], 'test-only-key');
-    assert.deepEqual(JSON.parse(options.body),sample);
+    assert.deepEqual(JSON.parse(options.body),{...sample, model_name:"proposed_v2"});
     return Response.json(result);
   });
   const success = await proxy.POST(request({sample_id:contract.SAMPLE_ID,waveform:[[999]]}));
   check('proxy uses canonical waveform, ignoring supplied waveform',()=>assert.equal(success.status,200));
   assert.deepEqual(await success.json(), result);
+  for (const model_name of ['baseline_v1', 'proposed_v2']) {
+    let sent;
+    const selectedProxy = load('app/api/predict/route.ts', async (_url, options) => {
+      sent = JSON.parse(options.body); return Response.json({...result, model_name});
+    });
+    const selectedResponse = await selectedProxy.POST(request({sample_id:contract.SAMPLE_ID,model_name}));
+    check('selected model forwarded and verified '+model_name,()=>{assert.equal(selectedResponse.status,200);assert.equal(sent.model_name,model_name)});
+    const mismatch = await load('app/api/predict/route.ts',async()=>Response.json({...result,model_name:model_name==='baseline_v1'?'proposed_v2':'baseline_v1'})).POST(request({sample_id:contract.SAMPLE_ID,model_name}));
+    check('wrong model response rejected '+model_name,()=>assert.equal(mismatch.status,502));
+  }
+  let invalidModelCalled=false;
+  const invalidModel=await load('app/api/predict/route.ts',async()=>{invalidModelCalled=true;return Response.json(result)}).POST(request({sample_id:contract.SAMPLE_ID,model_name:'../../other'}));
+  check('unknown model never reaches backend',()=>{assert.equal(invalidModel.status,422);assert.equal(invalidModelCalled,false)});
   const invalid = await proxy.POST(request({sample_id:'other'}));
   check('unknown sample rejected',()=>assert.equal(invalid.status,422));
   const malformed = await proxy.POST(new Request('http://localhost/api/predict',{method:'POST',body:'{'}));
@@ -109,7 +122,7 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
     const index=stateIndex++;if(!(index in states))states[index]=initial;
     return [states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value}];
   },useRef:initial=>{const index=refIndex++;return refs[index]??(refs[index]={current:initial})}};
-  const InteractivePage=load('app/page.tsx',async(url,options)=>{calls.push(url); if(url==='/api/predict') lastPredictBody=JSON.parse(options.body); return failPrediction && url==='/api/predict' ? Response.json({error:'추론에 실패했습니다.'},{status:502}) : Response.json(url==='/api/sample'?sample:{...result, sample_id:lastPredictBody.sample_id})},hooks).default;
+  const InteractivePage=load('app/page.tsx',async(url,options)=>{calls.push(url); if(url==='/api/predict') lastPredictBody=JSON.parse(options.body); return failPrediction && url==='/api/predict' ? Response.json({error:'추론에 실패했습니다.'},{status:502}) : Response.json(url==='/api/sample'?sample:{...result, model_name:lastPredictBody.model_name, sample_id:lastPredictBody.sample_id})},hooks).default;
   const render=()=>{stateIndex=0;refIndex=0;return InteractivePage()};
   function find(node, predicate) {
     if (!node || typeof node !== 'object') return null;
@@ -118,7 +131,7 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
     return null;
   }
   const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
-  find(render(),node=>node.type==='select').props.onChange({target:{value:contract.SAMPLE_ID}});
+  find(render(),node=>node.type==='select'&&node.props.id==='stead-sample').props.onChange({target:{value:contract.SAMPLE_ID}});
   await flush();
   check('selection loads actual sample',()=>assert.deepEqual(JSON.parse(JSON.stringify(states[1])),sample.waveform));
   const waveformHtml = moduleRequire('react-dom/server').renderToString(render());
@@ -142,7 +155,7 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
   check('failed prediction clears previous result and shows error',()=>{
     assert.equal(states[5],null);assert.equal(states[4],'추론에 실패했습니다.');assert.equal(states[6],1);
   });
-  find(render(),node=>node.type==='select').props.onChange({target:{value:''}});
+  find(render(),node=>node.type==='select'&&node.props.id==='stead-sample').props.onChange({target:{value:''}});
   await flush();
   check('reset removes input and result',()=>{assert.equal(states[1],null);assert.equal(states[5],null)});
   const customId='USER_JSON_001';
@@ -163,7 +176,7 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
   check('reject extra rows',()=>assert.equal(contract.isWaveform([...sample.waveform,[0,0,0]]),false));
   check('reject sparse channels',()=>assert.equal(contract.isWaveform(Array.from({length:1000},()=>Array(3))),false));
   const jsonProxy=load('app/api/predict/route.ts',async(url,options)=>{
-    assert.deepEqual(JSON.parse(options.body),custom);
+    assert.deepEqual(JSON.parse(options.body),{...custom,model_name:"proposed_v2"});
     return Response.json({...result,sample_id:customId});
   });
   const customResponse=await jsonProxy.POST(request({source:'json',...custom}));
@@ -269,5 +282,9 @@ const request = body => new Request('http://localhost/api/predict', {method:'POS
     assert.ok(micHtml.includes('모델 출력 점수 (지진 확률 아님)'));
     assert.ok(micHtml.includes('모노 복제 3채널'));
   });
+  find(render(),node=>node.props.id==='inference-model').props.onChange({target:{value:'baseline_v1'}});
+  check('model change clears previous result and preserves input',()=>{assert.equal(states[5],null);assert.ok(states[1])});
+  find(render(),node=>node.type==='button'&&node.props.className==='primary-button').props.onClick();await flush();
+  check('UI executes selected baseline and preserves model identity',()=>{assert.equal(lastPredictBody.model_name,'baseline_v1');assert.equal(states[5].model_name,'baseline_v1')});
   console.log(`${passed} checks passed`);
 })().catch(error=>{console.error(error);process.exitCode=1});

@@ -1,7 +1,7 @@
 import { fastApiUrl, fastApiHeaders } from "../fastapi";
 import { checkPredictionRateLimit } from "./rate-limit";
 import sample from "../../../data/stead-sample.json";
-import { isPrediction, isWaveform, isSampleId, waveformError, MAX_JSON_BYTES, SAMPLE_ID, SAMPLE_ID_ERROR } from "../../inference-contract";
+import { isModelName, isPrediction, isWaveform, isSampleId, waveformError, MAX_JSON_BYTES, SAMPLE_ID, SAMPLE_ID_ERROR } from "../../inference-contract";
 
 export async function POST(request: Request) {
   const limited = await checkPredictionRateLimit(request);
@@ -36,6 +36,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "요청 데이터 형식이 올바르지 않습니다." }, { status: 422 });
   }
   const input = body as Record<string, unknown>;
+  const modelName = input.model_name === undefined ? "proposed_v2" : input.model_name;
+  if (!isModelName(modelName)) return Response.json({ error: "지원하지 않는 모델입니다." }, { status: 422 });
   let payload: { sample_id: string; waveform: unknown };
   if (input.source === "json") {
     const error = waveformError(input.waveform);
@@ -58,7 +60,7 @@ export async function POST(request: Request) {
     const response = await fetch(fastApiUrl("/predict"), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...fastApiHeaders() },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, model_name: modelName }),
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(120000),
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
       return Response.json({ error: message }, { status: response.status === 422 ? 422 : 502 });
     }
     const result: unknown = await response.json();
-    if (!isPrediction(result, payload.sample_id)) {
+    if (!isPrediction(result, payload.sample_id, modelName)) {
       return Response.json({ error: "예측 응답의 클래스, 신뢰도 또는 샘플 ID가 올바르지 않습니다." }, { status: 502 });
     }
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });

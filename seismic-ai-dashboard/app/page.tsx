@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import MicrophoneInput from "./microphone-input";
 import { AUDIO_NOTICE, isAudioExperiment } from "./audio-resampling";
 import PredictionHistory from "./prediction-history";
-import { CLASS_NAMES, SAMPLE_ID, isPrediction, isWaveform, parseWaveformJSON, MAX_JSON_BYTES, type Prediction, type Waveform as WaveformData } from "./inference-contract";
+import { MODEL_NAMES, isModelName, modelLabel, type ModelName, CLASS_NAMES, SAMPLE_ID, isPrediction, isWaveform, parseWaveformJSON, MAX_JSON_BYTES, type Prediction, type Waveform as WaveformData } from "./inference-contract";
 
 function Waveform({ waveform, experimental = false }: { waveform: WaveformData | null; experimental?: boolean }) {
   const colors = ["#108879", "#6484c4", "#c18b46"];
@@ -71,11 +71,11 @@ export default function Home() {
     try {
       const response = await fetch("/api/predict", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mode === "stead" ? { sample_id: selected } : { source: "json", sample_id: selected, waveform }), signal: AbortSignal.timeout(130000),
+        body: JSON.stringify(mode === "stead" ? { sample_id: selected, model_name: modelName } : { source: "json", sample_id: selected, waveform, model_name: modelName }), signal: AbortSignal.timeout(130000),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(typeof data?.error === "string" ? data.error : "추론 요청에 실패했습니다.");
-      if (!isPrediction(data, selected)) throw new Error("예측 응답 형식이 올바르지 않습니다.");
+      if (!isPrediction(data, selected, modelName)) throw new Error("예측 응답 형식이 올바르지 않습니다.");
       setResult(data);
       setHistoryVersion(previous => previous + 1);
     } catch (cause) {
@@ -93,6 +93,7 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [filename, setFilename] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const [modelName, setModelName] = useState<ModelName>("proposed_v2");
 
   function resetInput() {
     if (requestLock.current) return;
@@ -200,6 +201,14 @@ export default function Home() {
           <div className="analysis-grid">
             <section id="input" className="card input-card"><div className="section-heading"><div><span className="step">01</span><h2>지진파 데이터 입력</h2></div><span className="subtle-label">WAVEFORM INPUT</span></div>
               <div className="input-body">
+                <div className="field-heading"><label htmlFor="inference-model">추론 모델 선택</label><span>V1 / V2</span></div>
+                <select id="inference-model" className="sample-select" value={modelName} disabled={loadingSample || running} onChange={event => {
+                  if (requestLock.current || !isModelName(event.target.value)) return;
+                  setModelName(event.target.value); setResult(null); setError("");
+                }} aria-describedby="model-help">
+                  {Object.entries(MODEL_NAMES).map(([name, label]) => <option key={name} value={name}>{label}</option>)}
+                </select>
+                <p id="model-help" className="chart-note">V1: CNN 기준 모델 · V2: CNN과 최대 진폭 특징 결합. 같은 입력으로 각각 실행해 비교할 수 있습니다. 버전은 성능 순위를 뜻하지 않습니다.</p>
                 <div className="input-modes" role="group" aria-label="입력 방식">
                   {([ ["stead", "STEAD 샘플"], ["json", "JSON 붙여넣기"], ["file", "JSON 파일"], ["microphone", "마이크 실험"] ] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={mode === key} disabled={loadingSample || running} onClick={() => changeMode(key)}>{label}</button>)}
                 </div>
@@ -237,7 +246,7 @@ export default function Home() {
                 {experimental && <p className="inference-error"><strong>{AUDIO_NOTICE}</strong></p>}
                 <h3>{className?.en ?? (running ? "분석 중" : "결과 대기")}</h3><p>{className?.ko ?? "입력을 검증한 뒤 추론을 실행해 주세요."}</p>
                 <div className="confidence"><div><span>{experimental ? "모델 출력 점수 (지진 확률 아님)" : "예측 신뢰도"}</span><strong>{confidence ?? "—"}<span>{result ? "%" : ""}</span></strong></div><div className="confidence-track"><span style={{ width: result ? `${result.confidence * 100}%` : "0%" }} /></div></div>
-                <dl className="result-details"><div><dt>샘플 ID</dt><dd>{result?.sample_id ?? "—"}</dd></div><div><dt>{experimental ? "모델 출력 클래스 ID" : "클래스 ID"}</dt><dd>{result?.prediction_class ?? "—"}</dd></div><div><dt>PostgreSQL 기록 ID</dt><dd>{result?.id ?? "—"}</dd></div></dl>
+                <dl className="result-details"><div><dt>사용 모델</dt><dd>{result?.model_name ? modelLabel(result.model_name) : "—"}</dd></div><div><dt>샘플 ID</dt><dd>{result?.sample_id ?? "—"}</dd></div><div><dt>{experimental ? "모델 출력 클래스 ID" : "클래스 ID"}</dt><dd>{result?.prediction_class ?? "—"}</dd></div><div><dt>PostgreSQL 기록 ID</dt><dd>{result?.id ?? "—"}</dd></div></dl>
                 <div className="result-note">{experimental ? "마이크 오디오의 실험 출력입니다. 지진 발생·규모·실제 확률을 뜻하지 않습니다." : result ? "실제 /predict 응답입니다. 신뢰도는 모델 출력 확률이며 실제 정답 여부를 보증하지 않습니다." : "가상 예측값은 표시하지 않습니다. 성공한 API 응답만 결과에 표시됩니다."}</div>
               </div>
             </section>

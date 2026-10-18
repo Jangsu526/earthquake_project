@@ -1,3 +1,4 @@
+from typing import Literal
 import uuid
 import os
 import secrets
@@ -12,7 +13,7 @@ from src.inference import (
     load_model,
     predict,
     prediction_report,
-    MODEL_PATH
+    MODEL_PATHS
 )
 import logging
 import psycopg
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-model = load_model(MODEL_PATH)
+models = {name: load_model(path) for name, path in MODEL_PATHS.items()}
 
 
 @app.middleware("http")
@@ -43,6 +44,7 @@ async def authenticate_api_requests(request: Request, call_next):
 class WaveformInput(BaseModel):
     waveform: list[list[float]]
     sample_id: str | None = None
+    model_name: Literal["baseline_v1", "proposed_v2"] = "proposed_v2"
 
 def validate_waveform(waveform):
     sample = np.asarray(waveform, dtype=np.float32)
@@ -71,7 +73,7 @@ def predict_earthquake(data: WaveformInput):
     try:
         sample = validate_waveform(data.waveform)
 
-        prediction = predict(model, sample)
+        prediction = predict(models[data.model_name], sample)
 
         prediction_class, confidence = prediction_report(prediction)
 
@@ -83,7 +85,7 @@ def predict_earthquake(data: WaveformInput):
     try:
         prediction_id = save_prediction(
             sample_id=sample_id,
-            model_name="proposed_v1",
+            model_name=data.model_name,
             prediction_class=int(prediction_class),
             confidence=float(confidence)
         )
@@ -96,6 +98,7 @@ def predict_earthquake(data: WaveformInput):
 
     return {
         "id": prediction_id,
+        "model_name": data.model_name,
         "sample_id": sample_id,
         "prediction_class": int(prediction_class),
         "confidence": float(confidence)

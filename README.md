@@ -186,3 +186,16 @@ Dockerfile
 compose.yaml
 requirements*.txt
 ```
+
+## V1 / V2 모델 선택
+
+대시보드에서 V1 Baseline CNN과 V2 Proposed(최대 진폭 결합)를 선택합니다. 같은 입력을 유지한 채 모델을 바꿔 각각 추론할 수 있습니다. 선택을 바꾸면 이전 결과는 지워지며, 실행 중에는 선택을 잠급니다.
+
+- V1: `baseline_v1` → `models/baseline_best_model.keras`
+- V2: `proposed_v2` → `models/best_proposed_model.keras`
+- 요청의 `model_name`을 Next.js와 FastAPI에서 제한된 이름으로 검증합니다. 생략하면 기존 제안 모델 동작을 유지하도록 V2를 사용합니다.
+- 응답과 DB에는 실행한 모델 이름을 남깁니다. 응답 모델이 요청과 다르면 성공 결과로 표시하지 않습니다.
+- 과거 `proposed_v1` DB 기록은 기존 제안 모델입니다. 새 V1 Baseline으로 바꾸거나 이름을 덮어쓰지 않습니다.
+- 버전은 성능 순위를 의미하지 않습니다. 마이크 입력의 실험 표시는 두 모델 모두에 적용됩니다.
+
+배포 시 FastAPI를 먼저 갱신한 뒤 Next.js를 배포하고, 두 모델의 실제 추론·이력 이름을 확인해야 합니다. 두 모델을 프로세스 시작 시 로드하므로 메모리와 시작 시간은 단일 모델 실행과 달라질 수 있습니다. 논문에 보고된 성능과 배포 체크포인트의 성능은 별도 검증 대상입니다.

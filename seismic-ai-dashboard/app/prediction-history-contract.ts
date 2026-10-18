@@ -1,6 +1,6 @@
 import type { Prediction } from "./inference-contract";
 
-export type HistoryRecord = Prediction & { model_name: string; created_at: string };
+export type HistoryRecord = Omit<Prediction, "model_name"> & { model_name: string; created_at: string };
 export type HistoryResponse = { count: number; predictions: HistoryRecord[] };
 
 export function parseHistory(value: unknown): HistoryResponse | null {

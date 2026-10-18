@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AUDIO_NOTICE, isAudioExperiment } from "./audio-resampling";
-import { CLASS_NAMES } from "./inference-contract";
+import { CLASS_NAMES, modelLabel } from "./inference-contract";
 import { parseHistory, type HistoryRecord } from "./prediction-history-contract";
 
 export default function PredictionHistory() {
@@ -44,7 +44,7 @@ export default function PredictionHistory() {
       <div className="section-heading"><div><span className="step">03</span><h2>PostgreSQL 추론 이력</h2><span className="count">{loading || error ? "—" : records.length}</span></div><button type="button" className="secondary-button" disabled={loading} onClick={() => { setLoading(true); setError(""); setRetry(value => value + 1); }}>이력 새로고침</button></div>
       {error && <p role="alert" className="history-error">{error} 입력과 AI 추론은 계속 사용할 수 있습니다.</p>}
       <div className="table-scroll"><table><caption className="sr-only">PostgreSQL에서 조회한 최신 추론 기록 최대 10건, 기록 ID 내림차순</caption><thead><tr><th scope="col">기록 ID</th><th scope="col">샘플 ID</th><th scope="col">모델</th><th scope="col">분류 결과</th><th scope="col">신뢰도 / 실험 점수</th><th scope="col">저장 시각</th></tr></thead><tbody>
-        {loading ? <tr><td colSpan={6} role="status">DB 이력을 불러오는 중입니다…</td></tr> : error ? <tr><td colSpan={6}>이력을 표시하지 못했습니다. 이력 새로고침으로 다시 시도해 주세요.</td></tr> : records.length === 0 ? <tr><td colSpan={6}>저장된 추론 이력이 없습니다.</td></tr> : records.map(record => <tr key={record.id} data-record-id={record.id}><td className="mono">{record.id}</td><td className="mono">{record.sample_id}{isAudioExperiment(record.sample_id) && <p className="inference-error">{AUDIO_NOTICE}</p>}</td><td>{record.model_name}</td><td><span className={`classification ${record.prediction_class === 2 ? "noise" : ""}`}>{isAudioExperiment(record.sample_id) && "모델 출력 클래스: "}{CLASS_NAMES[record.prediction_class].ko} · {CLASS_NAMES[record.prediction_class].en}</span></td><td className="mono">{(record.confidence * 100).toFixed(2)}%{isAudioExperiment(record.sample_id) && " (모델 점수 · 지진 확률 아님)"}</td><td className="mono"><time dateTime={record.created_at}>{record.created_at.replace("T", " ")}</time></td></tr>)}
+        {loading ? <tr><td colSpan={6} role="status">DB 이력을 불러오는 중입니다…</td></tr> : error ? <tr><td colSpan={6}>이력을 표시하지 못했습니다. 이력 새로고침으로 다시 시도해 주세요.</td></tr> : records.length === 0 ? <tr><td colSpan={6}>저장된 추론 이력이 없습니다.</td></tr> : records.map(record => <tr key={record.id} data-record-id={record.id}><td className="mono">{record.id}</td><td className="mono">{record.sample_id}{isAudioExperiment(record.sample_id) && <p className="inference-error">{AUDIO_NOTICE}</p>}</td><td>{modelLabel(record.model_name)}</td><td><span className={`classification ${record.prediction_class === 2 ? "noise" : ""}`}>{isAudioExperiment(record.sample_id) && "모델 출력 클래스: "}{CLASS_NAMES[record.prediction_class].ko} · {CLASS_NAMES[record.prediction_class].en}</span></td><td className="mono">{(record.confidence * 100).toFixed(2)}%{isAudioExperiment(record.sample_id) && " (모델 점수 · 지진 확률 아님)"}</td><td className="mono"><time dateTime={record.created_at}>{record.created_at.replace("T", " ")}</time></td></tr>)}
       </tbody></table></div>
       <div className="table-footer" aria-live="polite">{loading ? "이력 조회 중" : error ? "이력 조회 실패" : `최신 DB 기록 ${records.length}건`}<span>최대 10건 · 최신 ID 순 · 저장 시각은 API 원문 기준</span></div>
     </section>

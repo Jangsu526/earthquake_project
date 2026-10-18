@@ -30,7 +30,7 @@ class TestApiAuthentication(unittest.TestCase):
         self.ns = {
             "os": os, "secrets": secrets, "Request": object, "WaveformInput": object,
             "JSONResponse": lambda *, status_code, content: SimpleNamespace(status_code=status_code, content=content),
-            "model": object(), "validate_waveform": Mock(return_value="validated-waveform"),
+            "models": {"baseline_v1": object(), "proposed_v2": object()}, "validate_waveform": Mock(return_value="validated-waveform"),
             "predict": self.predict, "prediction_report": Mock(return_value=(2, 0.9)),
             "save_prediction": self.save, "get_predictions": self.get,
             "psycopg": SimpleNamespace(OperationalError=RuntimeError),
@@ -91,12 +91,22 @@ class TestApiAuthentication(unittest.TestCase):
         reached.assert_not_called()
 
     def test_authorized_prediction_preserves_save_contract_with_mock_database(self):
-        data = SimpleNamespace(sample_id="auth-test", waveform=[[0, 0, 0]] * 1000)
+        data = SimpleNamespace(model_name="proposed_v2", sample_id="auth-test", waveform=[[0, 0, 0]] * 1000)
         response, reached = self.request("/predict", "test-only-key", "test-only-key", lambda: self.ns["predict_earthquake"](data))
         reached.assert_called_once()
-        self.predict.assert_called_once_with(self.ns["model"], "validated-waveform")
-        self.save.assert_called_once_with(sample_id="auth-test", model_name="proposed_v1", prediction_class=2, confidence=0.9)
-        self.assertEqual(response, {"id": 123, "sample_id": "auth-test", "prediction_class": 2, "confidence": 0.9})
+        self.predict.assert_called_once_with(self.ns["models"]["proposed_v2"], "validated-waveform")
+        self.save.assert_called_once_with(sample_id="auth-test", model_name="proposed_v2", prediction_class=2, confidence=0.9)
+        self.assertEqual(response, {"id": 123, "model_name": "proposed_v2", "sample_id": "auth-test", "prediction_class": 2, "confidence": 0.9})
+
+    def test_each_model_uses_matching_checkpoint_and_database_name(self):
+        for name in ("baseline_v1", "proposed_v2"):
+            self.predict.reset_mock()
+            self.save.reset_mock()
+            data = SimpleNamespace(model_name=name, sample_id="model-test", waveform=[[0, 0, 0]] * 1000)
+            result = self.ns["predict_earthquake"](data)
+            self.predict.assert_called_once_with(self.ns["models"][name], "validated-waveform")
+            self.assertEqual(self.save.call_args.kwargs["model_name"], name)
+            self.assertEqual(result["model_name"], name)
 
     def test_authorized_history_preserves_database_contract_with_mock_database(self):
         response, reached = self.request("/predictions", "test-only-key", "test-only-key", lambda: self.ns["read_predictions"](10))
