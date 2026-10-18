@@ -3,8 +3,9 @@ import os
 import secrets
 import numpy as np
 from src.database import save_prediction, get_predictions
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 from src.inference import (
@@ -19,6 +20,7 @@ import psycopg
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 model = load_model(MODEL_PATH)
 
@@ -64,7 +66,7 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/predict")
+@app.post("/predict", dependencies=[Depends(api_key_header)])
 def predict_earthquake(data: WaveformInput):
     try:
         sample = validate_waveform(data.waveform)
@@ -99,7 +101,7 @@ def predict_earthquake(data: WaveformInput):
         "confidence": float(confidence)
     }
 
-@app.get("/predictions")
+@app.get("/predictions", dependencies=[Depends(api_key_header)])
 def read_predictions(limit: int = 10):
     if not 1 <= limit <= 100:
         raise HTTPException(
