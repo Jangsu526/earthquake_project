@@ -17,6 +17,10 @@ load_dotenv(BASE_DIR / ".env")
 #     )
 
 def get_connection():
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return psycopg.connect(database_url)
+
     return psycopg.connect(
         host=os.getenv("DB_HOST", "localhost"),
         dbname="earthquake_ai",
