@@ -13,7 +13,7 @@ venv/
 /data/
 
 # Model checkpoints
-models/
+/models/*
 
 # OS
 .DS_Store
@@ -45,6 +45,10 @@ test_inference.py
 *.pt
 *.pth
 *.onnx
+
+# Inference models required for Render deployment
+!/models/best_proposed_model.keras
+!/models/baseline_best_model.keras
 
 # Frontend dependencies and generated output
 node_modules/
